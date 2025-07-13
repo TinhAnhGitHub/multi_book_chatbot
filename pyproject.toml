@@ -1,0 +1,27 @@
+[project]
+name = "multi-book-chatbot"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.116.0",
+    "ipykernel>=6.29.5",
+    "llama-index-agent-openai>=0.4.12",
+    "llama-index-core>=0.12.47",
+    "llama-index-embeddings-azure-openai>=0.3.9",
+    "llama-index-llms-azure-openai>=0.3.4",
+    "llama-index-postprocessor-cohere-rerank>=0.4.0",
+    "llama-index-readers-file>=0.4.11",
+    "llama-index-storage-chat-store-mongo>=0.1.0",
+    "mongo>=0.2.0",
+    "pydantic>=2.11.7",
+    "pydantic-settings>=2.10.1",
+    "pymongo>=4.13.2",
+    "pymupdf>=1.26.3",
+    "pymupdf4llm>=0.0.26",
+    "python-dotenv>=1.1.1",
+    "streamlit>=1.46.1",
+    "tqdm>=4.67.1",
+    "uvicorn[standard]>=0.35.0",
+]
