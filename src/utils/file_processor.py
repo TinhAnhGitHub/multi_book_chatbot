@@ -11,7 +11,7 @@ logger = SimpleLogger(__name__)
 
 def load_books(book_paths: str, index_folder: str) -> tuple[list[Document], list[str], list[str]]:
 
-    exists_index_file = set(os.listdir(index_folder))  # Files already indexed
+    exists_index_file = set(os.listdir(index_folder))  # Files already indexe   d
     all_pdf_paths = []
 
     for root, _, files in os.walk(book_paths):

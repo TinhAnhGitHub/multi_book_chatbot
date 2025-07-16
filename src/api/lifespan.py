@@ -7,12 +7,17 @@ import pickle
 
 from llama_index.core import Settings
 from llama_index.core.agent.workflow import FunctionAgent
-from llama_index.llms.azure_openai import AzureOpenAI
 from llama_index.core.base.llms.types import TextBlock
-from llama_index.embeddings.azure_openai import AzureOpenAIEmbedding
 from llama_index.core.tools import FunctionTool
 from llama_index.core import Document
 from llama_index.core.memory import Memory, StaticMemoryBlock, FactExtractionMemoryBlock
+
+from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
+from google.genai.types import EmbedContentConfig
+from llama_index.llms.gemini import Gemini
+
+
+
 
 import os
 import sys
@@ -102,22 +107,18 @@ async def lifespan(app: FastAPI):
     config = get_config()
     app_state.config = config
     
-    llm = AzureOpenAI(
-        model=config.azure_openai.deployment_name,
-        deployment_name=config.azure_openai.deployment_name,
-        api_key=config.azure_openai.api_key,
-        azure_endpoint=config.azure_openai.azure_endpoint,
-        api_version=config.azure_openai.api_version
+    llm = Gemini(
+        model=config.gemini.google_model_name,
+        api_key=config.gemini.api_key
     )
 
     app_state.llm = llm
     
-    embed_model = AzureOpenAIEmbedding(
-        model=config.azure_openai.embedding_deployment_name,
-        deployment_name=config.azure_openai.embedding_deployment_name,
-        api_key=config.azure_openai.api_key,
-        azure_endpoint=config.azure_openai.azure_endpoint,
-        api_version=config.azure_openai.api_version,
+    embed_model = GoogleGenAIEmbedding(
+        model_name=config.gemini.google_embedding_model,
+        api_key=config.gemini.api_key,
+        embed_batch_size=512,
+        
     )
 
     Settings.llm = llm

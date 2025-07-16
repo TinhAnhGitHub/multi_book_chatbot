@@ -10,7 +10,7 @@ from llama_index.core import (
     load_index_from_storage
 )
 
-from llama_index.core.indices.base import BaseIndex
+from llama_index.core.indices.base import BaseIndex 
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core.schema import Document, BaseNode
 from llama_index.llms.azure_openai import AzureOpenAI
