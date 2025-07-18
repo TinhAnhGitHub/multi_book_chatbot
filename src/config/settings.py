@@ -29,21 +29,13 @@ class MongoConfig(BaseSettings):
     mongodb_uri: str = Field(..., alias="MONGODB_URI")
     db_name: str = Field("chatbot_memory_book", alias="MONGODB_DB_NAME")
     collection_name: str = Field("chat_history", alias="MONGODB_COLLECTION_NAME")
-    files_collection : str  = Field("file_collection")
+    file_collection_namespace : str  = Field("file_collection")
+    index_store_namespace: str = Field("")
 
 
 
-class RedisConfig(BaseSettings):
-    host: str = Field("localhost", alias="REDIS_HOST")
-    port: int = Field(6379, alias="REDIS_PORT")
-    db: int = Field(0, alias="REDIS_DB")
-    password: str = Field("", alias="REDIS_PASSWORD")
-    session_timeout: int = Field(3600, alias="REDIS_SESSION_TIMEOUT")
-    def redis_url(self) -> str:
-        if self.password:
-            return f"redis://:{self.password}@{self.host}:{self.port}/{self.db}"
-        return f"redis://{self.host}:{self.port}/{self.db}"
-        
+
+
 
 
 class MinIOConfig(BaseSettings):
@@ -138,6 +130,8 @@ class AppConfig:
         self.max_file_size_mb = self.file_config.max_file_size_mb
         self.chunk_size = self.file_config.chunk_size
         self.chunk_overlap = self.file_config.chunk_overlap
+
+        self.storage_persist_dir = Field(..., alias="STORAGE_PERSIST_FOLDER")
 
 def get_config() -> AppConfig:
     config = AppConfig()
