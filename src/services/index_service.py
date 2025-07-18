@@ -5,7 +5,7 @@ ROOT_DIR = os.path.abspath(
 )
 sys.path.insert(0, ROOT_DIR)
 
-from llama_index.core import VectorStoreIndex, SummaryIndex
+from llama_index.core import VectorStoreIndex, SummaryIndex, StorageContext, DocumentSummaryIndex
 from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core.schema import Document
@@ -37,8 +37,9 @@ class IndexService:
             chunk_overlap=getattr(config, 'chunk_overlap', 50),
             chunk_size=getattr(config, 'chunk_size', 512)
         )
+        
     
-    async def create_vector_summary_index(self, doc: Document) -> IndexInterface:
+    async def create_vector_summary_index(self, doc: Document, ctx: StorageContext) -> IndexInterface:
         nodes = self.node_parser.get_nodes_from_documents([doc])
 
         vector_index = VectorStoreIndex(
@@ -48,7 +49,9 @@ class IndexService:
             show_progress=True
         )
         
-        summary_index = SummaryIndex(nodes=nodes, show_progress=True)
+        summary_index = SummaryIndex(nodes=nodes, show_progress=True, storage_context=ctx)
+
+        DocumentSummaryIndex(storage_context=)
 
         return IndexInterface(
             vector_index=vector_index,

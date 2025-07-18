@@ -20,7 +20,6 @@ class CustomObjectRetriever(ObjectRetriever):
         retriever: BaseRetriever,
         object_node_mapping: SimpleObjectNodeMapping,
         llm: LLM,
-        reranker: CohereRerank,
         node_postprocessors=None,
     ):
         self._retriever = retriever
@@ -81,19 +80,19 @@ def create_tool_retriever(
         similarity_top_k=config.agent.similarity_top_k,
     )
 
-    reranker = CohereRerank(
-        api_key=config.cohere.api_key,
-        top_n=config.agent.rerank_top_n,
-        model=config.cohere.model
-    )
+    # reranker = CohereRerank(
+    #     api_key=config.cohere.api_key,
+    #     top_n=config.agent.rerank_top_n,
+    #     model=config.cohere.model
+    # )
 
-    logger.debug(f"Initialized reranker: {reranker}")
+    # logger.debug(f"Initialized reranker: {reranker}")
 
     return CustomObjectRetriever(
         retriever=vector_node_retriever,
         object_node_mapping=obj_index.object_node_mapping,
         llm=llm,
-        reranker=reranker
+        # reranker=reranker
     )
 
 

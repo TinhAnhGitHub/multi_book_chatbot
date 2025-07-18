@@ -6,17 +6,31 @@ ROOT_DIR = os.path.abspath(
 sys.path.insert(0, ROOT_DIR)
 
 from datetime import datetime, timezone
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection, AsyncIOMotorDatabase
+from typing import Any, cast
+
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from llama_index.vector_stores.milvus import MilvusVectorStore, IndexManagement
-from llama_index.core.vector_stores.types import VectorStoreQuery, VectorStoreQueryMode, MetadataFilter, FilterOperator, MetadataFilters
+from llama_index.core.vector_stores.types import (
+    VectorStoreQuery,
+    MetadataFilter,
+    FilterOperator,
+    MetadataFilters,
+)
 from llama_index.core.schema import Document, BaseNode
-from typing import Any
+from llama_index.storage.docstore.mongodb import MongoDocumentStore
+from llama_index.storage.index_store.mongodb import MongoIndexStore
+from llama_index.storage.chat_store.mongo import MongoChatStore
+from llama_index.storage.chat_store.redis import RedisChatStore
+from llama_index.core.llms import ChatMessage, MessageRole
+from llama_index.core import StorageContext, VectorStoreIndex
+from llama_index.core.memory import ChatMemoryBuffer
 from pymilvus import DataType
-from typing import  cast
+
+
 
 from src.utils.logger_config import SimpleLogger
 from src.config.settings import AppConfig
-from src.api.api_models import FileDocument, FileStatus, ChatHistoryDocument
+from src.api.api_models import FileDocument, FileStatus, ChatHistoryDocument, ChatResponse
 
 
 
@@ -26,11 +40,20 @@ logger = SimpleLogger(__name__)
 
 
 class DatabaseService:
+    """
+    Thin wrapper client and Milvus vector store
+    1. Owns the MongoClient and Milvus vector store
+    2. exposes ready-made StorageContext Objects for file-level indices
+
+
+    """
     def __init__(self, config: AppConfig):
         self.config = config
         self.mongo_client: AsyncIOMotorClient | None = None
         self.mongo_db: AsyncIOMotorDatabase | None = None
         self.milvus_vector_store: MilvusVectorStore | None = None
+
+        
 
     async def connect(self):
         await self._connect_mongodb()
@@ -92,8 +115,42 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"Milvus connection/initialization failed: {e}")
             raise
+        
+    def storage_context(self, file_id: str) -> StorageContext:
+        """
+        Return a StorageContext wired to mongo backend dockstore & index store with already initialized milvus vector store
+        """
+        return StorageContext.from_defaults(
+            docstore=MongoDocumentStore.from_uri(
+                uri=self.config.mongo.mongodb_uri,
+                db_name=self.config.mongo.db_name,
+                namespace=file_id
+            ),
+        )
     
 
+    async def storage_context_delete(self, file_id: str):
+        docstore =  MongoDocumentStore.from_uri(
+                uri=self.config.mongo.mongodb_uri,
+                db_name=self.config.mongo.db_name,
+                namespace=file_id
+            )
+        
+        all_nodes_dict = docstore.docs
+        node_ids  = list(all_nodes_dict.keys())
+        for node_id in node_ids:
+            await docstore.adelete_document(node_id)
+
+def get_nodes_from_context(self, file_id: str):
+    docstore =  MongoDocumentStore.from_uri(
+            uri=self.config.mongo.mongodb_uri,
+            db_name=self.config.mongo.db_name,
+            namespace=file_id
+        )
+
+    return docstore.docs        
+
+        
 class FileService(DatabaseService):
     """
     Service for file operations
@@ -180,6 +237,8 @@ class FileService(DatabaseService):
 
         return result.modified_count > 0
     
+
+    
     async def delete_file_metadata(self, file_id: str) -> FileDocument | None:
         files_collection = self.mongo_db[self.config.mongo.files_collection]
 
@@ -200,7 +259,7 @@ class FileService(DatabaseService):
 
 class VectorService(DatabaseService):
     
-    async def store_embeddings(self, file_id: str, chunks_data: list[Document]) -> int:
+    async def store_embeddings(self, file_id: str, chunks_data: list[BaseNode]) -> int:
 
         if not self.milvus_vector_store:
             raise RuntimeError("MilvusVectorStore is not initialized")
@@ -212,7 +271,7 @@ class VectorService(DatabaseService):
             })
             doc.id_ = f"{file_id}_{idx}"
 
-        await self.milvus_vector_store.async_add(cast(list[BaseNode], chunks_data))
+        await self.milvus_vector_store.async_add(chunks_data)
         
         logger.info(f"Stored {len(chunks_data)} embeddings for file_id: {file_id}")
         return len(chunks_data)
@@ -282,54 +341,79 @@ class VectorService(DatabaseService):
 
 
 
-
-     
-class ChatService(DatabaseService):
-    """
-    Service for chat operations
-    """
-
-    async def save_chat_history(
-        self,
-        session_id: str,
-        query: str,
-        response: str,
-        file_ids: list[str],
-        sources: list[dict[str, Any]]
-    ):
-        chat_collection = self.mongo_db[self.config.mongo.collection_name]
-
-        chat_doc = ChatHistoryDocument(
-            session_id=session_id,
-            query=query,
-            response=response,
-            file_ids=file_ids,
-            sources=sources
+def doc_to_message(chat_his_doc: ChatHistoryDocument) -> list[ChatMessage]:
+    msgs = [
+        ChatMessage(role=MessageRole.USER, content=chat_his_doc.query),
+        ChatMessage(
+            role=MessageRole.ASSISTANT,
+            content=chat_his_doc.response,
+            additional_kwargs={
+                'file_ids': chat_his_doc.file_ids,
+                'sources': chat_his_doc.sources,
+                'timestamp': chat_his_doc.timestamp.isoformat(),
+                'query': chat_his_doc.query,
+                'response': chat_his_doc.response
+            }
+        ),
+    ]
+    return msgs
+    
+class ChatService: 
+    def __init__(self, config: AppConfig):
+        self.mongo_store = MongoChatStore(
+            mongo_uri=config.mongo.mongodb_uri,
+            db_name=config.mongo.db_name,
+            collection_name=config.mongo.collection_name
         )
 
-        await chat_collection.insert_one(chat_doc)
-
+        self.redis_chat = RedisChatStore(redis_url=config.redis.redis_url(), ttl=6000)
     
-    async def get_chat_history(
+
+    def memory(self, session_id: str) -> ChatMemoryBuffer:
+        return ChatMemoryBuffer.from_defaults(
+            token_limit=4000,
+            chat_store=self.redis_chat,
+            chat_store_key=session_id
+        )
+    async def load_session_into_redis(self, session_id: str, max_turns: int = 50 )-> None:
+        msgs = await self.mongo_store.aget_messages(session_id)
+        await self.redis_chat.aset_messages(session_id, msgs)
+    
+    async def save_chat_history(
         self,
-        session_id: str,
-        limit: int = 10
+        chat_his_doc: ChatHistoryDocument
+    ) -> None:
+        msgs = doc_to_message(chat_his_doc)
+
+        for msg in msgs:
+            await self.mongo_store.async_add_message(chat_his_doc.session_id, msg)
+            await self.redis_chat.async_add_message(chat_his_doc.session_id, msg)
+
+    async def get_chat_history(
+        self, session_id: str
     ) -> list[ChatHistoryDocument]:
-        chat_collection = self.mongo_db[self.config.mongo.collection_name]
+        raw_msgs  = await self.mongo_store.aget_messages(session_id)
 
-        cursor = chat_collection.find(
-            {'session_id': session_id}
-        ).sort('timestamp', -1).limit(limit)
+        turns: list[ChatHistoryDocument] = []
+        for i in range(0, len(raw_msgs) - 1, 2):
+            user_msg = raw_msgs[i]
+            assistant_msg = raw_msgs[i + 1]
 
-        history = []
-        async for chat in cursor:
-            history.append(ChatHistoryDocument(**chat))
-        
-        return history
+            turns.append(
+                ChatHistoryDocument(
+                    session_id=session_id,
+                    query=user_msg.content or "",
+                    response=assistant_msg.content or "",
+                    file_ids=assistant_msg.additional_kwargs.get("file_ids", []),
+                    sources=assistant_msg.additional_kwargs.get("sources", []),
+                    timestamp=datetime.fromisoformat(
+                        assistant_msg.additional_kwargs.get("timestamp")
+                    ),
+                )
+            )
+        return turns[::-1]
 
 
-
-    
 
 
 

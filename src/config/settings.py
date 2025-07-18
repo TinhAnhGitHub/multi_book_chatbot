@@ -39,6 +39,11 @@ class RedisConfig(BaseSettings):
     db: int = Field(0, alias="REDIS_DB")
     password: str = Field("", alias="REDIS_PASSWORD")
     session_timeout: int = Field(3600, alias="REDIS_SESSION_TIMEOUT")
+    def redis_url(self) -> str:
+        if self.password:
+            return f"redis://:{self.password}@{self.host}:{self.port}/{self.db}"
+        return f"redis://{self.host}:{self.port}/{self.db}"
+        
 
 
 class MinIOConfig(BaseSettings):
